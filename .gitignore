@@ -1,0 +1,5 @@
+config/dbconfig
+config/import.ini
+*.ipynb
+pangaea_db_sql/
+data/
