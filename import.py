@@ -4,7 +4,8 @@ import argparse
 import pandas as pd
 import datetime
 import sql_itis
-import numpy as np
+import logging
+import os
 
 def main():
     global itis_vernacular_prefix
@@ -41,13 +42,13 @@ def main():
 
     #------ Initialize DB & Term Table Params
     sqlExec = sql_itis.SQLExecutor()
+    sqlExec.setLogger(logger)
     sqlExec.setDBParams(pg_user,pg_pwd,pg_db,pg_localhost,itis_db_file)
     sqlExec.setTermParams(itis_lsid_pfx,id_terminology,id_user_created_updated,id_term_category,itis_uri_prefix,id_term_status_accepted,id_term_status_notaccepted,
                           has_broader_pk,has_synonym_pk,has_attribute_pk,itis_vernacular_prefix)
     #conn = sqlExec.create_pg_connection()
     #if conn:
         #print('Connected!')
-    print('----------------------------------')
     #------- import all itis db
     df_itis = sqlExec.select_itis_taxonomic_units()
     df_itis['datetime_created'] = pd.to_datetime(df_itis['datetime_created'])
@@ -58,8 +59,7 @@ def main():
     df_itis.loc[(df_itis.id_term_status == 'not accepted') | (df_itis.id_term_status == 'invalid'), 'id_term_status'] = id_term_status_notaccepted
     # Replacing Pandas or Numpy Nan with a None to use with Postgres
     df_itis = df_itis.where((pd.notnull(df_itis)), None)
-    print('ITIS (Valid,Invalid) TSNs:', df_itis.tsn.nunique())
-    print('----------------------------------')
+    logger.debug('ITIS (Valid,Invalid) TSNs: %s' % df_itis.tsn.nunique())
 
     # ------- clean existing terms in pg:tbl:term
     df_clean = sqlExec.select_sql_pangaea_terms('term', ['id_term', 'semantic_uri'])
@@ -67,7 +67,7 @@ def main():
     df_clean = df_clean[~df_clean.semantic_uri.str.startswith(itis_lsid_pfx)]
     df_clean = df_clean[~df_clean.semantic_uri.str.contains(':vern_id:')]
     if (len(df_clean) > 0):
-        print('Cleaning existing PANG-ITIS TERMS :', df_clean.shape[0])
+        logger.debug('Cleaning existing PANG-ITIS TERMS %s' % df_clean.shape[0])
         df_clean['semantic_uri'] = df_clean['semantic_uri'].apply(lambda x: "{}{}".format(itis_lsid_pfx, x))
         df_clean = pd.merge(df_clean, df_itis, on=['semantic_uri'], how='left')
         df_clean = df_clean.rename(columns={"update_date": "datetime_last_harvest"})
@@ -80,9 +80,8 @@ def main():
         df_clean = df_clean[tblterm_cols]
         sqlExec.batch_update_terms(df_clean)
     else:
-        print('Cleaning existing PANG-ITIS TERMS : SKIPPED ')
+        logger.debug('Cleaning existing PANG-ITIS TERMS : SKIPPED ')
     del df_clean
-    print('----------------------------------')
 
     # -------incremental updates of terms
     select_cols = ['id_term', 'semantic_uri', 'datetime_updated', 'datetime_last_harvest']
@@ -94,7 +93,7 @@ def main():
     df_update['update_date'] = pd.to_datetime(df_update['update_date'])
     df_update = df_update[df_update.datetime_last_harvest < df_update.update_date]
     if len(df_update) > 0:
-        print('Updating existing PANG-ITIS TERMS : ', df_update.shape[0])
+        logger.debug('Updating existing PANG-ITIS TERMS : %s' % df_update.shape[0])
         df_update = df_update[['name', 'datetime_created', 'update_date', 'description', 'semantic_uri', 'uri', 'id_term_status','id_term']]
         df_update = df_update.rename(columns={"update_date": "datetime_last_harvest"})
         df_update['datetime_updated'] = now_dt
@@ -107,9 +106,8 @@ def main():
         df_update = df_update[tblterm_cols]
         sqlExec.batch_update_terms(df_update)
     else:
-        print('Updating existing PANG-ITIS TERMS : SKIPPED ')
+        logger.debug('Updating existing PANG-ITIS TERMS : SKIPPED ')
     del df_update
-    print('----------------------------------')
 
     # -------insert new terms
     df_insert = sqlExec.select_sql_pangaea_terms('term', select_cols)
@@ -117,7 +115,7 @@ def main():
     df_insert = df_insert[df_insert.datetime_last_harvest.isnull()]  # all terms in db has datetime_last_harvest
     df_insert = df_insert[df_insert.id_term_status == id_term_status_accepted] # only insert valid terms
     if len(df_insert) > 0:
-        print('Inserting new ITIS TERMS :', df_insert.shape[0])
+        logger.debug('Inserting new ITIS TERMS :%s' % df_insert.shape[0])
         df_insert = df_insert[['name', 'datetime_created', 'update_date', 'description', 'semantic_uri', 'uri', 'id_term_status']]
         df_insert = df_insert.rename(columns={"update_date": "datetime_last_harvest"})  # insert only valid terms
         df_insert['datetime_updated'] = now_dt
@@ -130,9 +128,8 @@ def main():
         df_insert = df_insert[tblterm_cols]
         sqlExec.batch_insert_new_terms(df_insert, 'term')
     else:
-        print('Inserting new ITIS TERMS : SKIPPED')
+        logger.debug('Inserting new ITIS TERMS : SKIPPED')
     del df_insert
-    print('----------------------------------')
 
     # ---- main vernacular df
     df_vern = sqlExec.select_vernaculars()
@@ -148,7 +145,7 @@ def main():
     df_vern_update['update_date'] = pd.to_datetime(df_vern_update['update_date'])
     df_vern_update = df_vern_update[df_vern_update.datetime_last_harvest < df_vern_update.update_date]
     if len(df_vern_update) > 0:
-        print('Updating existing Vernacular-ITIS TERMS :', df_vern_update.shape[0])
+        logger.debug('Updating existing Vernacular-ITIS TERMS : %s' % df_vern_update.shape[0])
         df_vern_update = df_vern_update[['name', 'update_date', 'semantic_uri', 'update_date']]
         df_vern_update = df_vern_update.rename(columns={"update_date": "datetime_last_harvest"})
         df_vern_update['datetime_updated'] = now_dt
@@ -163,15 +160,15 @@ def main():
              'id_terminology', 'id_user_created', 'id_user_updated', 'datetime_last_harvest', 'id_term']]
         sqlExec.batch_update_vernacular_terms(df_vern_update)
     else:
-        print('Updating existing Vernacular-ITIS TERMS : SKIPPED')
+        logger.debug('Updating existing Vernacular-ITIS TERMS : SKIPPED')
     del df_vern_update
-    print('----------------------------------')
+
 
     # -------insert vernaculars new terms
     df_vern_insert = pd.merge(df_vern, df_pang, on=['semantic_uri'], how='left')
     df_vern_insert = df_vern_insert[df_vern_insert.datetime_last_harvest.isnull()]  # all terms in db has datetime_last_harvest
     if len(df_vern_insert) > 0:
-        print('Inserting new ITIS Vernacular Terms :', df_vern_insert.shape[0])
+        logger.debug('Inserting new ITIS Vernacular Terms : %s' % df_vern_insert.shape[0])
         df_vern_insert = df_vern_insert[['name', 'update_date', 'semantic_uri']]
         df_vern_insert = df_vern_insert.rename(columns={"update_date": "datetime_last_harvest"})  # insert only valid terms
         df_vern_insert['datetime_updated'] = now_dt
@@ -185,10 +182,9 @@ def main():
         df_vern_insert = df_vern_insert[['name', 'datetime_updated', 'semantic_uri', 'id_term_category', 'id_term_status','id_terminology', 'id_user_created', 'id_user_updated', 'datetime_last_harvest', 'id_term']]
         sqlExec.batch_insert_new_terms(df_vern_insert, 'term')
     else:
-        print('Inserting new ITIS Vernacular Terms : SKIPPED')
+        logger.debug('Inserting new ITIS Vernacular Terms : SKIPPED')
     del df_vern_insert
     del df_pang
-    print('----------------------------------')
 
     ## --------- Term Dict relations
     select_cols =['id_term','semantic_uri']
@@ -202,9 +198,9 @@ def main():
     df_vern['id_term_related'] = df_vern.apply(lambda x: get_vern_tsn_lsid(x["tsn"], x["vern_id"]), axis=1)
     df_vern['id_term'] = df_vern['tsn'].apply(lambda x: term_dict.get(itis_lsid_pfx + str(x)))
     df_syn_vend= create_relation_df(df_vern,has_synonym_pk, ['tsn', 'vern_id'])
-    print('SYNONYM relations - vernaculars :', df_syn_vend.shape[0])
+    logger.debug('SYNONYM relations - vernaculars : %s' % df_syn_vend.shape[0])
     sqlExec.insert_update_relations(df_syn_vend, 'term_relation')
-    print('----------------------------------')
+
 
     # -------SYNONYM: main relations
     df_synonym = sqlExec.select_itis_rel(['tsn', 'tsn_accepted'], 'synonym_links')
@@ -213,9 +209,8 @@ def main():
     df_synonym['id_term_related'] = df_synonym['tsn'].apply(lambda x: term_dict.get(itis_lsid_pfx + str(x)))
     df_synonym['id_term'] = df_synonym['tsn_accepted'].apply(lambda x: term_dict.get(itis_lsid_pfx + str(x)))
     df_syn_main = create_relation_df(df_synonym, has_synonym_pk, ['tsn', 'tsn_accepted'])
-    print('SYNONYM main :', df_syn_main.shape[0])
+    logger.debug('SYNONYM main : %s' % df_syn_main.shape[0])
     sqlExec.insert_update_relations(df_syn_main, 'term_relation')
-    print('----------------------------------')
 
     # a = df_syn_vend[['id_term','id_term_related']]
     # b = df_syn_main[['id_term', 'id_term_related']]
@@ -232,9 +227,8 @@ def main():
     df_broad['id_term'] = df_broad['tsn'].apply(lambda x: term_dict.get(itis_lsid_pfx + str(x)))
     df_broad['id_term_related'] = df_broad['parent_tsn'].apply(lambda y: term_dict.get(itis_lsid_pfx + str(y)))
     df_broad_sub = create_relation_df(df_broad, has_broader_pk, ['tsn', 'parent_tsn'])
-    print('BROADER relations :', df_broad_sub.shape[0])
+    logger.debug('BROADER relations : %s' % df_broad_sub.shape[0])
     sqlExec.insert_update_relations(df_broad_sub, 'term_relation')
-    print('----------------------------------')
 
     # HAS ATTRIBUTE
     rank_types = df_itis.rank_name.unique().tolist()
@@ -247,7 +241,7 @@ def main():
     df_att['id_term'] = df_att['tsn'].apply(lambda x: term_dict.get(itis_lsid_pfx + str(x)))
     df_att['id_term_related'] = df_att['rank_name'].apply(lambda y: rank_dict.get(str(y)))
     df_att = create_relation_df(df_att, has_attribute_pk, ['tsn', 'rank_name'])
-    print('ATTRIBUTE relations :', df_att.shape[0])
+    logger.debug('ATTRIBUTE relations : %s' % df_att.shape[0])
     sqlExec.insert_update_relations(df_att, 'term_relation')
 
 
@@ -268,10 +262,32 @@ def get_vern_tsn_lsid(tsn,vern):
     lsid_comb = itis_vernacular_prefix.format(tsn,vern)
     return term_dict.get(lsid_comb)
 
+def initLog():
+    cwd = os.getcwd()
+    # create logger with 'spam_application'
+    logger = logging.getLogger('pg_itis_importer')
+    logger.setLevel(logging.DEBUG)
+    # create file handler which logs even debug messages
+    fh = logging.FileHandler(cwd+'\data\log\itis.log')
+    fh.setLevel(logging.DEBUG)
+    # create console handler with a higher log level
+    ch = logging.StreamHandler()
+    ch.setLevel(logging.ERROR)
+    # create formatter and add it to the handlers
+    formatter = logging.Formatter('%(asctime)s - %(name)s - %(levelname)s - %(message)s')
+    fh.setFormatter(formatter)
+    ch.setFormatter(formatter)
+    # add the handlers to the logger
+    logger.addHandler(fh)
+    logger.addHandler(ch)
+    return logger
 
 if __name__ == '__main__':
+    global logger
+    logger = initLog()
     a = datetime.datetime.now()
     main()
     b = datetime.datetime.now()
-    print('----------------------------------')
-    print('Total time:',b-a)
+    diff = b-a
+    logger.debug('Total execution time:%s' %diff)
+    logger.debug('----------------------------------------')

@@ -2,11 +2,14 @@ import sqlite3
 from sqlite3 import Error
 import pandas as pd
 import psycopg2
-from datetime import datetime, timezone
 import psycopg2.extras
 
 class SQLExecutor(object):
-
+    
+    def setLogger(self, lg):
+        global logger
+        logger = lg
+        
     def setDBParams(self,u,p,d,h,db_file):
         global user
         global pwd
@@ -48,7 +51,7 @@ class SQLExecutor(object):
             conn = sqlite3.connect(itis_db_file)
             return conn
         except Error as e:
-            print(e)
+            logger.debug(e)
 
         return None
 
@@ -58,7 +61,7 @@ class SQLExecutor(object):
             conn = psycopg2.connect(connectStr)
             return conn
         except Error as e:
-            print(e)
+            logger.debug(e)
         return None
 
     def select_itis_taxonomic_units(self):
@@ -73,7 +76,7 @@ class SQLExecutor(object):
                              "LEFT JOIN taxon_unit_types as trnk ON tu.rank_id= trnk.rank_id and tu.kingdom_id = trnk.kingdom_id "
             df = pd.read_sql(sql_taxonunits, conn)
         except sqlite3.Error as error:
-            print('sqlite3.Error select_itis_taxonomic_units:', error)
+            logger.debug('sqlite3.Error select_itis_taxonomic_units: %s' % error)
         finally:
             if conn is not None:
                 conn.close()
@@ -99,7 +102,7 @@ class SQLExecutor(object):
             conn_pg.commit()  ## commit the transaction
             cur.close()
         except psycopg2.DatabaseError as error:
-            print(error)
+            logger.debug(error)
         finally:
             if conn_pg is not None:
                 conn_pg.close()
@@ -116,11 +119,11 @@ class SQLExecutor(object):
                           'id_term_status=%s,id_terminology=%s,id_user_created=%s,' \
                           'id_user_updated=%s,datetime_last_harvest=%s where id_term=%s ;'
             psycopg2.extras.execute_batch(cur, update_stmt, list_of_tuples)
-            print("batch_update_terms - record updated successfully ")
+            logger.debug("batch_update_terms - record updated successfully ")
             #Commit your changes
             conn_pg.commit()
         except psycopg2.DatabaseError as error:
-            print("Failed to update record to database rollback: {}".format(error))
+            logger.debug('Failed to update record to database rollback: %s ' % error)
             # reverting changes because of exception
             conn_pg.rollback()
         finally:
@@ -138,11 +141,11 @@ class SQLExecutor(object):
                           'id_term_category=%s,id_term_status=%s,id_terminology=%s,id_user_created=%s,' \
                           'id_user_updated=%s,datetime_last_harvest=%s where id_term=%s ;'
             psycopg2.extras.execute_batch(cur, update_stmt, list_of_tuples)
-            print("batch_update_vernacular_terms - record updated successfully ")
+            logger.debug("batch_update_vernacular_terms - record updated successfully ")
             # Commit your changes
             conn_pg.commit()
         except psycopg2.DatabaseError as error:
-            print("Failed to update record to database rollback: {}".format(error))
+            logger.debug('Failed to update record to database rollback: %s' % error)
             conn_pg.rollback()
         finally:
             if conn_pg is not None:
@@ -163,11 +166,11 @@ class SQLExecutor(object):
             insert_stmt = "INSERT INTO {} ({}) {}".format(table, columns, values)
             cur = conn_pg.cursor()
             psycopg2.extras.execute_batch(cur, insert_stmt, list_of_tuples)
-            print("batch_insert_new_terms - record inserted successfully ")
+            logger.debug("batch_insert_new_terms - record inserted successfully ")
             # Commit your changes
             conn_pg.commit()
         except psycopg2.DatabaseError as error:
-            print("Failed to insert records to database rollback: {}".format(error))
+            logger.debug('Failed to insert records to database rollback: %s' % (error))
             conn_pg.rollback()
         finally:
             if conn_pg is not None:
@@ -183,7 +186,7 @@ class SQLExecutor(object):
                           "where (language='English' or language='unspecified') and approved_ind='Y' "
             df = pd.read_sql(select_stmt, conn)
         except sqlite3.Error as error:
-            print(error)
+            logger.debug(error)
         finally:
             if conn is not None:
                 conn.close()
@@ -212,10 +215,10 @@ class SQLExecutor(object):
                 upsert_stmt = insert_stmt + on_conflict
                 cur = conn_pg.cursor()
                 psycopg2.extras.execute_batch(cur, upsert_stmt, df.values)
-                print("Relations inserted/updated successfully ")
+                logger.debug("Relations inserted/updated successfully ")
                 conn_pg.commit()
         except psycopg2.DatabaseError as error:
-                print("Failed to insert/update relations to database rollback: {}".format(error))
+                logger.debug('Failed to insert/update relations to database rollback:  %s' % error)
                 conn_pg.rollback()
         finally:
             if conn_pg is not None:
@@ -231,7 +234,7 @@ class SQLExecutor(object):
             select_stmt = "SELECT {} from {}".format(cols, table)
             df_res = pd.read_sql(select_stmt, conn)
         except sqlite3.Error as error:
-            print(error)
+            logger.debug(error)
         finally:
             if conn is not None:
                 cur.close()
