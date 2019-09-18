@@ -10,17 +10,19 @@ class SQLExecutor(object):
         global logger
         logger = lg
         
-    def setDBParams(self,u,p,d,h,db_file):
+    def setDBParams(self,u,p,d,h,prt,db_file):
         global user
         global pwd
         global db
         global host
         global itis_db_file
+        global pt
         user = u
         pwd = p
         db = d
         host = h
         itis_db_file=db_file
+        pt = prt
 
     def setTermParams(self,lsid_pfx,id_termi,id_user,id_tcategory,uri_prefix,status_accepted,status_notaccepted,broader_pk, synonym_pk, attribute_pk,vernacular_prefix):
         global itis_lsid_pfx
@@ -57,7 +59,7 @@ class SQLExecutor(object):
 
     def create_pg_connection(self):
         try:
-            connectStr = 'host={host} dbname={db} user={user} password={pwd}'.format(host=host,db=db, user=user, pwd=pwd)
+            connectStr = 'host={host} dbname={db} user={user} password={pwd} port={port}'.format(host=host,db=db, user=user, pwd=pwd, port=pt)
             conn = psycopg2.connect(connectStr)
             return conn
         except Error as e:
@@ -68,7 +70,7 @@ class SQLExecutor(object):
         df = pd.DataFrame()  # creates a new dataframe that's empty
         try:
             conn = self.create_sqlite_connection()
-            cur = conn.cursor()
+            #cur = conn.cursor()
             sql_taxonunits = "SELECT tu.tsn, tu.complete_name as name, tu.name_usage as id_term_status, tu.rank_id,trnk.rank_name, " \
                              "tath.taxon_author as description,tu.initial_time_stamp as datetime_created, tu.update_date, tu.parent_tsn " \
                              "FROM taxonomic_units as tu " \
@@ -91,8 +93,17 @@ class SQLExecutor(object):
         conn_pg.close()
         return df_pg_term
 
+    def select_sql_itis_relations(self):
+        conn_pg = self.create_pg_connection()
+        pg_sql_select_rel = "select tr.id_term,tr.id_term_related, tr.id_relation_type from term_relation tr " \
+                             "join term t1 on tr.id_term=t1.id_term " \
+                             "join term t2 on tr.id_term_related=t2.id_term " \
+                             "where t1.id_terminology=2 and t2.id_terminology=2"
+        df_pg_term = pd.read_sql(pg_sql_select_rel, conn_pg)
+        conn_pg.close()
+        return df_pg_term
+
     def get_max_idterm(self):
-        max_id = None
         try:
             conn_pg = self.create_pg_connection()
             cur = conn_pg.cursor()
@@ -116,8 +127,12 @@ class SQLExecutor(object):
             list_of_tuples = [tuple(x) for x in df.values]
             update_stmt = 'update term set name =%s, datetime_created=%s,' \
                           'datetime_updated=%s, description=%s,semantic_uri=%s,uri=%s,id_term_category=%s,' \
-                          'id_term_status=%s,id_terminology=%s,id_user_created=%s,' \
+                          'id_term_status=%s,id_terminology=%s,' \
                           'id_user_updated=%s,datetime_last_harvest=%s where id_term=%s ;'
+            #update_stmt = 'update term set name =%s, datetime_created=%s,' \
+                          #'datetime_updated=%s, description=%s,semantic_uri=%s,uri=%s,id_term_category=%s,' \
+                          #'id_term_status=%s,id_terminology=%s,id_user_created=%s,' \
+                          #'id_user_updated=%s,datetime_last_harvest=%s where id_term=%s ;'
             psycopg2.extras.execute_batch(cur, update_stmt, list_of_tuples)
             logger.debug("batch_update_terms - record updated successfully ")
             #Commit your changes
@@ -156,7 +171,6 @@ class SQLExecutor(object):
         try:
             conn_pg = self.create_pg_connection()
             conn_pg.autocommit = False
-            cur = conn_pg.cursor()
             list_of_tuples = [tuple(x) for x in df.values]
             df_columns = list(df)
             columns = ",".join(df_columns)
@@ -181,7 +195,6 @@ class SQLExecutor(object):
         df = pd.DataFrame()  # creates a new dataframe that's empty
         try:
             conn = self.create_sqlite_connection()
-            cur = conn.cursor()
             select_stmt = "SELECT tsn, vernacular_name as name,update_date,vern_id from vernaculars " \
                           "where (language='English' or language='unspecified') and approved_ind='Y' "
             df = pd.read_sql(select_stmt, conn)
@@ -202,7 +215,6 @@ class SQLExecutor(object):
         try:
             conn_pg = self.create_pg_connection()
             conn_pg.autocommit = False
-            cur = conn_pg.cursor()
             if len(df) > 0:
                 df_columns = list(df)
                 # create (col1,col2,...)
@@ -211,7 +223,10 @@ class SQLExecutor(object):
                 values = "VALUES({})".format(",".join(["%s" for _ in df_columns]))
                 # create INSERT INTO table (columns) VALUES('%s',...)
                 insert_stmt = "INSERT INTO {} ({}) {} ".format(table, columns, values)
-                on_conflict = "ON CONFLICT ON CONSTRAINT term_relation_id_term_id_term_related_key DO NOTHING ; "
+                #on_conflict = "ON CONFLICT ON CONSTRAINT term_relation_id_term_id_term_related_key DO NOTHING ; "
+                on_conflict = "ON CONFLICT ON CONSTRAINT term_relation_id_term_id_term_related_key " \
+                              "DO UPDATE SET id_relation_type = EXCLUDED.id_relation_type , " \
+                              "datetime_updated = EXCLUDED.datetime_updated , id_user_updated = EXCLUDED.id_user_updated ; "
                 upsert_stmt = insert_stmt + on_conflict
                 cur = conn_pg.cursor()
                 psycopg2.extras.execute_batch(cur, upsert_stmt, df.values)
