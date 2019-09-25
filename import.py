@@ -356,9 +356,11 @@ def extractWriteSQLLite(itis_sql_url,targetfile):
                     #zipObj.extract(f, 'data/')
                     with open(targetfile, "wb") as fw:  # open the output path for writing
                         fw.write(zipObj.read(f))
-        logger.debug('ITIS zip file extracted and saved.')
+                        logger.debug('ITIS zip file extracted and saved.')
+                        return True
         #print(str(datetime.datetime.now()))
-        return True
+        logger.debug('Zip file did not contain sqlite file.')
+        return False
     except BadZipfile:
         logger.debug('Zip extraction of ITIS file failed.')
         return False

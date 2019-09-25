@@ -10,3 +10,4 @@ notebooks/itisSqlite.zip
 notebooks/itisSqlite082819.zip
 notebooks/synonyms.csv
 test/testzip.py
+/data/*.sqlite
