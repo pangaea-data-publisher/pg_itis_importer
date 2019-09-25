@@ -222,12 +222,12 @@ class SQLExecutor(object):
                 # create VALUES('%s', '%s",...) one '%s' per column
                 #values = "VALUES({})".format(",".join(["%s" for _ in df_columns]))
                 # create INSERT INTO table (columns) VALUES('%s',...)
-                insert_stmt = "INSERT INTO {} ({}) VALUES %s ".format(table, columns)
+                insert_stmt = "INSERT INTO {} AS t ({}) VALUES %s ".format(table, columns)
                 #on_conflict = "ON CONFLICT ON CONSTRAINT term_relation_id_term_id_term_related_key DO NOTHING ; "
                 on_conflict = "ON CONFLICT ON CONSTRAINT term_relation_id_term_id_term_related_key " \
                               "DO UPDATE SET id_relation_type = EXCLUDED.id_relation_type , " \
                               "datetime_updated = EXCLUDED.datetime_updated , id_user_updated = EXCLUDED.id_user_updated " \
-                              "WHERE id_relation_type != EXCLUDED.id_relation_type; "
+                              "WHERE (t.id_relation_type) IS DISTINCT FROM (EXCLUDED.id_relation_type); "
                 upsert_stmt = insert_stmt + on_conflict
                 #print(upsert_stmt)
                 cur = conn_pg.cursor()
