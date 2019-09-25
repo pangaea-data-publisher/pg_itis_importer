@@ -226,7 +226,8 @@ class SQLExecutor(object):
                 #on_conflict = "ON CONFLICT ON CONSTRAINT term_relation_id_term_id_term_related_key DO NOTHING ; "
                 on_conflict = "ON CONFLICT ON CONSTRAINT term_relation_id_term_id_term_related_key " \
                               "DO UPDATE SET id_relation_type = EXCLUDED.id_relation_type , " \
-                              "datetime_updated = EXCLUDED.datetime_updated , id_user_updated = EXCLUDED.id_user_updated ; "
+                              "datetime_updated = EXCLUDED.datetime_updated , id_user_updated = EXCLUDED.id_user_updated "
+                              "WHERE id_relation_type != EXCLUDED.id_relation_type; "
                 upsert_stmt = insert_stmt + on_conflict
                 #print(upsert_stmt)
                 cur = conn_pg.cursor()
