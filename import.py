@@ -29,12 +29,14 @@ def main():
 
     #check if harvest should proceed or not
     prev_last_change_date = datetime.datetime.strptime(prev_last_change_date, "%Y-%m-%d").date()
+    logger.debug("Requesting last update date from ITIS REST...")
     lastdt_req = requests.get('https://www.itis.gov/ITISWebService/services/ITISService/getLastChangeDate')
     root = ET.fromstring(lastdt_req.content)
     last_change_date = root.findall('./{http://itis_service.itis.usgs.gov}return/{http://metadata.itis_service.itis.usgs.gov/xsd}updateDate')[0].text
     last_change_date_str = re.search(r'\d{4}-\d{2}-\d{2}', last_change_date)
     last_change_date = datetime.datetime.strptime(last_change_date_str.group(), "%Y-%m-%d").date()
     if last_change_date > prev_last_change_date:
+        logger.debug("Downloading ITIS zip file...")
         #dowbload latest sqlite and then proceed, and finally update new date in the log
         #targetfile = itis_db_file.rsplit('\\',1)[1] # 'data\ITIS.sqlite'
         isExtracted = extractWriteSQLLite(itis_sql_url,itis_db_file)
@@ -47,7 +49,6 @@ def main():
     else:
         #cancel harvesting
         logger.debug('No changes in ITIS file, harvest is aborted!')
-
 
 def harvestTerms():
     global itis_vernacular_prefix
@@ -368,6 +369,7 @@ def extractWriteSQLLite(itis_sql_url,targetfile):
 if __name__ == '__main__':
     global logger
     logger = initLog()
+    logger.debug("Starting ITIS harvester...")
     a = datetime.datetime.now()
     main()
     b = datetime.datetime.now()
