@@ -3,3 +3,11 @@ config/import.ini
 *.ipynb
 pangaea_db_sql/
 data/
+config/import_local.ini
+config/sql_test_import
+.pytest_cache/v/cache/nodeids
+notebooks/data-1547652192999.csv
+notebooks/itisSqlite.zip
+notebooks/itisSqlite082819.zip
+notebooks/synonyms.csv
+test/testzip.py

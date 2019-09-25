@@ -6,18 +6,55 @@ import datetime
 import sql_itis
 import logging
 import os
+import requests
+from zipfile import ZipFile, BadZipfile
+import re
+from io import BytesIO
+import xml.etree.ElementTree as ET
 
 def main():
-    global itis_vernacular_prefix
-    global term_dict
-    global now_dt
-    global id_user_created_updated
-
+    global args
+    global configParser
+    global last_change_date_str
+    global itis_db_file
     ap = argparse.ArgumentParser()
     ap.add_argument("-c", "--config", required=True, help="Path to import.ini config file")
     args = ap.parse_args()
     configParser = configparser.ConfigParser()
     configParser.read(args.config)
+
+    prev_last_change_date = configParser.get('INPUT', 'itis_last_change_date')
+    itis_sql_url = configParser.get('INPUT', 'itis_sql_url')
+    itis_db_file = configParser.get('INPUT', 'pgitis_sql')
+
+    #check if harvest should proceed or not
+    prev_last_change_date = datetime.datetime.strptime(prev_last_change_date, "%Y-%m-%d").date()
+    lastdt_req = requests.get('https://www.itis.gov/ITISWebService/services/ITISService/getLastChangeDate')
+    root = ET.fromstring(lastdt_req.content)
+    last_change_date = root.findall('./{http://itis_service.itis.usgs.gov}return/{http://metadata.itis_service.itis.usgs.gov/xsd}updateDate')[0].text
+    last_change_date_str = re.search(r'\d{4}-\d{2}-\d{2}', last_change_date)
+    last_change_date = datetime.datetime.strptime(last_change_date_str.group(), "%Y-%m-%d").date()
+    if last_change_date > prev_last_change_date:
+        #dowbload latest sqlite and then proceed, and finally update new date in the log
+        #targetfile = itis_db_file.rsplit('\\',1)[1] # 'data\ITIS.sqlite'
+        isExtracted = extractWriteSQLLite(itis_sql_url,itis_db_file)
+        if isExtracted:
+            harvestTerms()
+            configParser.set('INPUT', 'itis_last_change_date', last_change_date_str.group())
+            with open(args.config, 'w+') as configfile:
+                configParser.write(configfile)
+            logger.debug("Last Harvest Date Updated! :%s ", last_change_date_str.group())
+    else:
+        #cancel harvesting
+        logger.debug('No changes in ITIS file, harvest is aborted!')
+
+
+def harvestTerms():
+    global itis_vernacular_prefix
+    global term_dict
+    global now_dt
+    global id_user_created_updated
+
     itis_lsid_pfx = configParser.get('INPUT', 'lsid_itis_prefix')
     id_terminology = configParser.getint('INPUT', 'id_terminology')
     id_user_created_updated = configParser.getint('INPUT', 'id_user_created_updated')
@@ -31,7 +68,6 @@ def main():
     itis_vernacular_prefix = configParser.get('INPUT', 'itis_vernacular_prefix')
     now_dt = datetime.datetime.utcnow()
 
-    itis_db_file = configParser.get('INPUT', 'itis_sql_file')
     pg_user = configParser.get('DB', 'pangaea_db_user')
     pg_pwd = configParser.get('DB', 'pangaea_db_pwd')
     pg_db = configParser.get('DB', 'pangaea_db_db')
@@ -210,7 +246,7 @@ def main():
     #select all existing relations, both id_term and id_term_related from ITIS (id_terminology = 2)
     #df_rels = sqlExec.select_sql_itis_relations() #tr.id_term,tr.id_term_related, tr.id_relation_type
 
-    # -------SYNONYM: vernacular relations ( 1 tsn has many verns)
+    # -------SYNONYM: vernacular relations ( 1 tsn has many verns) is_synonym_of_pk = 3
     df_vern = df_vern[['tsn', 'vern_id']]
     df_vern = df_vern[df_vern.tsn != 0] #temp check
     df_vern['id_term'] = df_vern.apply(lambda x: get_vern_tsn_lsid(x["tsn"], x["vern_id"]), axis=1) # vern-based term
@@ -219,14 +255,14 @@ def main():
     logger.debug('SYNONYM relations - vernaculars : %s' % df_syn_vend.shape[0])
     sqlExec.insert_update_relations(df_syn_vend, 'term_relation')
 
-    # -------SYNONYM: main relations ( 1 tsn has many tsn_accepted)
+    # -------SYNONYM: main relations ( 1 tsn has many tsn_accepted) is_synonym_of_pk = 3
     df_synonym = sqlExec.select_itis_rel(['tsn', 'tsn_accepted'], 'synonym_links')
-    df_synonym = df_synonym[(df_synonym.tsn != 0) & (df_synonym.tsn_accepted != 0)]  #temp check
+    df_synonym = df_synonym[(df_synonym.tsn != 0) & (df_synonym.tsn_accepted != 0)]  #temp check (for itis only) 0 tsn is undefined in ITIS
     df_synonym = df_synonym[df_synonym['tsn'].notnull() & df_synonym['tsn_accepted'].notnull()].reset_index(drop=True)
     df_synonym['id_term'] = df_synonym['tsn'].apply(lambda x: term_dict.get(itis_lsid_pfx + str(x)))
     df_synonym['id_term_related'] = df_synonym['tsn_accepted'].apply(lambda x: term_dict.get(itis_lsid_pfx + str(x)))
     df_syn_main = create_relation_df(df_synonym, is_synonym_of_pk, ['tsn', 'tsn_accepted'])
-    logger.debug('SYNONYM main : %s' % df_syn_main.shape[0])
+    logger.debug('SYNONYM relations main : %s' % df_syn_main.shape[0])
     #temp_csv = df_syn_main[['id_term','id_term_related']]
     #temp_csv.to_csv('synonyms.csv', sep='\t', encoding='utf-8')
     sqlExec.insert_update_relations(df_syn_main, 'term_relation')
@@ -237,9 +273,9 @@ def main():
     # c = pd.merge(a, b, how='inner', on=['id_term'])
     # print(c)
 
-    # -------BROADER relations
+    # -------BROADER relations has_broader_term_pk = 1
     df_broad = df_itis[['tsn','parent_tsn']]
-    df_broad = df_broad[(df_broad.tsn != 0) & (df_broad.parent_tsn != 0)]
+    df_broad = df_broad[(df_broad.tsn != 0) & (df_broad.parent_tsn != 0)] #tsn=0 is not exists in itis, so should be excluded
     df_broad = df_broad[df_broad['tsn'].notnull() & df_broad['parent_tsn'].notnull()].reset_index(drop=True)
     df_broad['parent_tsn'] = df_broad['parent_tsn'].astype(int)
     df_broad['tsn'] = df_broad['tsn'].astype(int)
@@ -249,7 +285,7 @@ def main():
     logger.debug('BROADER relations : %s' % df_broad_sub.shape[0])
     sqlExec.insert_update_relations(df_broad_sub, 'term_relation')
 
-    # HAS ATTRIBUTE
+    # HAS ATTRIBUTE has_attribute_pk = 2
     rank_types = df_itis.rank_name.unique().tolist()
     df_rank = sqlExec.select_sql_pangaea_rank_terms('term', ['name', 'id_term'], rank_types)
     rank_dict = dict(zip(df_rank.name, df_rank.id_term))
@@ -268,7 +304,7 @@ def create_relation_df(dfa, relation_id, drop_cols):
     #temp = df[df.isnull().any(axis=1)]
     #print(temp)
     df = df.dropna(subset=['id_term', 'id_term_related'])
-    logger.debug('create_insert_relation_df : %s' % df.shape[0])
+    #logger.debug('create_insert_relation_df : %s' % df.shape[0])
     df['id_term'] = df['id_term'].astype(int)
     df['id_term_related'] = df['id_term_related'].astype(int)
     df['id_relation_type'] = relation_id
@@ -302,6 +338,30 @@ def initLog():
     logger.addHandler(fh)
     logger.addHandler(ch)
     return logger
+
+#test olnly
+def extractWriteSQLLite(itis_sql_url,targetfile):
+    #print (str(datetime.datetime.now()))
+    #print(itis_sql_url)
+    content = requests.get(itis_sql_url)
+    #print(str(datetime.datetime.now()))
+    try:
+        # Create a ZipFile Object and load sample.zip in it
+        with ZipFile(BytesIO(content.content), 'r') as zipObj:
+            # Get a list of all archived file names from the zip and Iterate over the file names
+            for f in zipObj.namelist():
+                # Check filename endswith csv
+                if f.endswith('.sqlite'):
+                    #print(f,targetfile)
+                    #zipObj.extract(f, 'data/')
+                    with open(targetfile, "wb") as fw:  # open the output path for writing
+                        fw.write(zipObj.read(f))
+        logger.debug('ITIS zip file extracted and saved.')
+        #print(str(datetime.datetime.now()))
+        return True
+    except BadZipfile:
+        logger.debug('Zip extraction of ITIS file failed.')
+        return False
 
 if __name__ == '__main__':
     global logger
