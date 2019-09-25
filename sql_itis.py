@@ -220,16 +220,18 @@ class SQLExecutor(object):
                 # create (col1,col2,...)
                 columns = ",".join(df_columns)
                 # create VALUES('%s', '%s",...) one '%s' per column
-                values = "VALUES({})".format(",".join(["%s" for _ in df_columns]))
+                #values = "VALUES({})".format(",".join(["%s" for _ in df_columns]))
                 # create INSERT INTO table (columns) VALUES('%s',...)
-                insert_stmt = "INSERT INTO {} ({}) {} ".format(table, columns, values)
+                insert_stmt = "INSERT INTO {} ({}) VALUES %s ".format(table, columns)
                 #on_conflict = "ON CONFLICT ON CONSTRAINT term_relation_id_term_id_term_related_key DO NOTHING ; "
                 on_conflict = "ON CONFLICT ON CONSTRAINT term_relation_id_term_id_term_related_key " \
                               "DO UPDATE SET id_relation_type = EXCLUDED.id_relation_type , " \
                               "datetime_updated = EXCLUDED.datetime_updated , id_user_updated = EXCLUDED.id_user_updated ; "
                 upsert_stmt = insert_stmt + on_conflict
+                #print(upsert_stmt)
                 cur = conn_pg.cursor()
-                psycopg2.extras.execute_batch(cur, upsert_stmt, df.values)
+                #psycopg2.extras.execute_batch(cur, upsert_stmt, df.values)
+                psycopg2.extras.execute_values(cur, upsert_stmt, df.values,page_size=10000)
                 logger.debug("Relations inserted/updated successfully ")
                 conn_pg.commit()
         except psycopg2.DatabaseError as error:
