@@ -11,4 +11,5 @@ notebooks/itisSqlite082819.zip
 notebooks/synonyms.csv
 test/testzip.py
 data/*.sqlite
+data/*.log
 __pycache__
