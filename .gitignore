@@ -2,7 +2,6 @@ config/dbconfig
 config/import.ini
 *.ipynb
 pangaea_db_sql/
-data/
 config/import_local.ini
 config/sql_test_import
 .pytest_cache/v/cache/nodeids
