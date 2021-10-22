@@ -286,19 +286,19 @@ def harvestTerms():
     logger.debug('BROADER relations : %s' % df_broad_sub.shape[0])
     sqlExec.insert_update_relations(df_broad_sub, 'term_relation')
 
-    # HAS ATTRIBUTE has_attribute_pk = 2
-    rank_types = df_itis.rank_name.unique().tolist()
-    df_rank = sqlExec.select_sql_pangaea_rank_terms('term', ['name', 'id_term'], rank_types)
-    rank_dict = dict(zip(df_rank.name, df_rank.id_term))
-    df_att = df_itis[['tsn', 'rank_name']]
-    df_att = df_att[df_att.tsn != 0]
-    df_att = df_att[df_att['tsn'].notnull() & df_att['rank_name'].notnull()].reset_index(drop=True)
-    df_att['tsn'] = df_att['tsn'].astype(int)
-    df_att['id_term'] = df_att['tsn'].apply(lambda x: term_dict.get(itis_lsid_pfx + str(x)))
-    df_att['id_term_related'] = df_att['rank_name'].apply(lambda y: rank_dict.get(str(y)))
-    df_att = create_relation_df(df_att, has_attribute_pk, ['tsn', 'rank_name'])
-    logger.debug('ATTRIBUTE relations : %s' % df_att.shape[0])
-    sqlExec.insert_update_relations(df_att, 'term_relation')
+    # HAS ATTRIBUTE has_attribute_pk = 2 (disabled for now, as PANGAEA don't want the rank terms anymore)
+    #rank_types = df_itis.rank_name.unique().tolist()
+    #df_rank = sqlExec.select_sql_pangaea_rank_terms('term', ['name', 'id_term'], rank_types)
+    #rank_dict = dict(zip(df_rank.name, df_rank.id_term))
+    #df_att = df_itis[['tsn', 'rank_name']]
+    #df_att = df_att[df_att.tsn != 0]
+    #df_att = df_att[df_att['tsn'].notnull() & df_att['rank_name'].notnull()].reset_index(drop=True)
+    #df_att['tsn'] = df_att['tsn'].astype(int)
+    #df_att['id_term'] = df_att['tsn'].apply(lambda x: term_dict.get(itis_lsid_pfx + str(x)))
+    #df_att['id_term_related'] = df_att['rank_name'].apply(lambda y: rank_dict.get(str(y)))
+    #df_att = create_relation_df(df_att, has_attribute_pk, ['tsn', 'rank_name'])
+    #logger.debug('ATTRIBUTE relations : %s' % df_att.shape[0])
+    #sqlExec.insert_update_relations(df_att, 'term_relation')
 
 def create_relation_df(dfa, relation_id, drop_cols):
     df = dfa.copy()
