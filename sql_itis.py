@@ -152,8 +152,8 @@ class SQLExecutor(object):
             conn_pg.autocommit = False
             cur = conn_pg.cursor()
             list_of_tuples = [tuple(x) for x in df.values]
-            update_stmt = 'update term set name =%s,semantic_uri=%s,' \
-                          'id_term_category=%s,id_term_status=%s,id_terminology=%s,id_user_created=%s,' \
+            update_stmt = 'update term set name=%s,semantic_uri=%s,' \
+                          'id_term_category=%s,id_term_status=%s,id_terminology=%s,' \
                           'id_user_updated=%s,datetime_last_harvest=%s where id_term=%s ;'
             psycopg2.extras.execute_batch(cur, update_stmt, list_of_tuples)
             logger.debug("batch_update_vernacular_terms - record updated successfully ")

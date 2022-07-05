@@ -7,6 +7,7 @@ import sql_itis
 import logging
 import os
 import requests
+import subprocess
 from zipfile import ZipFile, BadZipfile
 import re
 from io import BytesIO
@@ -199,18 +200,19 @@ def harvestTerms():
     df_vern_update = df_vern_update[df_vern_update.datetime_last_harvest < df_vern_update.update_date]
     if len(df_vern_update) > 0:
         logger.debug('Updating existing Vernacular-ITIS TERMS : %s' % df_vern_update.shape[0])
-        df_vern_update = df_vern_update[['name', 'update_date', 'semantic_uri', 'update_date']]
+        df_vern_update = df_vern_update[['name', 'semantic_uri', 'update_date', 'id_term']]
         df_vern_update = df_vern_update.rename(columns={"update_date": "datetime_last_harvest"})
         df_vern_update['datetime_updated'] = now_dt
-        df_update['id_term_category'] = id_term_category
+        df_vern_update['id_term_category'] = id_term_category
         df_vern_update['id_term_status'] = id_term_status_accepted
         df_vern_update['id_terminology'] = id_terminology
         #df_vern_update['id_user_created'] = id_user_created_updated => CHECK!!
         df_vern_update['id_user_updated'] = id_user_created_updated
         df_vern_update['id_term'] = df_vern_update['id_term'].astype(int)
         # rearrange columns for update
-        df_vern_update = df_vern_update[['name', 'datetime_updated', 'semantic_uri', 'id_term_category', 'id_term_status',
-             'id_terminology', 'id_user_created', 'id_user_updated', 'datetime_last_harvest', 'id_term']]
+        df_vern_update = df_vern_update[['name', 'semantic_uri', 'id_term_category', 'id_term_status',
+             'id_terminology', 'id_user_updated', 'datetime_last_harvest', 'id_term']]
+        #print(df_vern_update)
         sqlExec.batch_update_vernacular_terms(df_vern_update)
     else:
         logger.debug('Updating existing Vernacular-ITIS TERMS : SKIPPED')
@@ -344,11 +346,12 @@ def initLog():
 def extractWriteSQLLite(itis_sql_url,targetfile):
     #print (str(datetime.datetime.now()))
     #print(itis_sql_url)
-    content = requests.get(itis_sql_url)
+    #content = requests.get(itis_sql_url)
+    proc = subprocess.run(['curl', '-s', itis_sql_url], stdout=subprocess.PIPE, check=True)
     #print(str(datetime.datetime.now()))
     try:
         # Create a ZipFile Object and load sample.zip in it
-        with ZipFile(BytesIO(content.content), 'r') as zipObj:
+        with ZipFile(BytesIO(proc.stdout), 'r') as zipObj:
             # Get a list of all archived file names from the zip and Iterate over the file names
             for f in zipObj.namelist():
                 # Check filename endswith csv
