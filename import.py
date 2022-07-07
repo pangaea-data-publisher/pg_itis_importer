@@ -1,4 +1,7 @@
 #!/usr/bin/python
+import warnings
+warnings.simplefilter(action='ignore', category=UserWarning)
+
 import configparser
 import argparse
 import pandas as pd
