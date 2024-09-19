@@ -15,12 +15,15 @@ from zipfile import ZipFile, BadZipfile
 import re
 from io import BytesIO
 import xml.etree.ElementTree as ET
+from urllib3.exceptions import InsecureRequestWarning
+from urllib3 import disable_warnings
 
 def main():
     global args
     global configParser
     global last_change_date_str
     global itis_db_file
+    disable_warnings(InsecureRequestWarning)
     ap = argparse.ArgumentParser()
     ap.add_argument("-c", "--config", required=True, help="Path to import.ini config file")
     args = ap.parse_args()
