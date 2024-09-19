@@ -34,7 +34,7 @@ def main():
     #check if harvest should proceed or not
     prev_last_change_date = datetime.datetime.strptime(prev_last_change_date, "%Y-%m-%d").date()
     logger.debug("Requesting last update date from ITIS REST...")
-    lastdt_req = requests.get('https://www.itis.gov/ITISWebService/services/ITISService/getLastChangeDate')
+    lastdt_req = requests.get('https://www.itis.gov/ITISWebService/services/ITISService/getLastChangeDate', verify = False)
     root = ET.fromstring(lastdt_req.content)
     last_change_date = root.findall('./{http://itis_service.itis.usgs.gov}return/{http://metadata.itis_service.itis.usgs.gov/xsd}updateDate')[0].text
     last_change_date_str = re.search(r'\d{4}-\d{2}-\d{2}', last_change_date)
@@ -350,7 +350,7 @@ def extractWriteSQLLite(itis_sql_url,targetfile):
     #print (str(datetime.datetime.now()))
     #print(itis_sql_url)
     #content = requests.get(itis_sql_url)
-    proc = subprocess.run(['curl', '-s', itis_sql_url], stdout=subprocess.PIPE, check=True)
+    proc = subprocess.run(['curl', '--insecure', '-s', itis_sql_url], stdout=subprocess.PIPE, check=True)
     #print(str(datetime.datetime.now()))
     try:
         # Create a ZipFile Object and load sample.zip in it
